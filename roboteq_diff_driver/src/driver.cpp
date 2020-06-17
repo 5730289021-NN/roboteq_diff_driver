@@ -176,6 +176,7 @@ protected:
   int baud;
   bool open_loop;
   double wheel_circumference;
+  //double gear_ratio;
   double track_width;
   int encoder_ppr;
   int encoder_cpr;
@@ -211,6 +212,7 @@ MainNode::MainNode() :
   open_loop(false),
   baud(115200),
   wheel_circumference(0),
+  //gear_ratio(0),
   track_width(0),
   encoder_ppr(0),
   encoder_cpr(0),
@@ -239,6 +241,8 @@ MainNode::MainNode() :
   ROS_INFO_STREAM("open_loop: " << open_loop);
   nhLocal.param("wheel_circumference", wheel_circumference, 0.3192);
   ROS_INFO_STREAM("wheel_circumference: " << wheel_circumference);
+  //nhLocal.param("gear_ratio", gear_ratio, 20);
+  //ROS_INFO_STREAM("gear_ratio: " << gear_ratio);
   nhLocal.param("track_width", track_width, 0.4318);
   ROS_INFO_STREAM("track_width: " << track_width);
   nhLocal.param("encoder_ppr", encoder_ppr, 900);
@@ -247,7 +251,7 @@ MainNode::MainNode() :
   ROS_INFO_STREAM("encoder_cpr: " << encoder_cpr);
   nhLocal.param("max_amps", max_amps, 5.0);
   ROS_INFO_STREAM("max_amps: " << max_amps);
-  nhLocal.param("max_rpm", max_rpm, 100);
+  nhLocal.param("max_rpm", max_rpm, 20000);
   ROS_INFO_STREAM("max_rpm: " << max_rpm);
 
 }
@@ -273,8 +277,8 @@ ROS_DEBUG_STREAM("cmdvel speed right: " << right_speed << " left: " << left_spee
   if (open_loop)
   {
     // motor power (scale 0-1000)
-    int32_t right_power = right_speed / wheel_circumference * 60.0 / max_rpm * 1000.0;
-    int32_t left_power = left_speed / wheel_circumference * 60.0 / max_rpm * 1000.0;
+    int32_t right_power = /*gear_ratio */ right_speed / wheel_circumference * 60.0 / max_rpm * 1000.0;
+    int32_t left_power = /*gear_ratio */ left_speed / wheel_circumference * 60.0 / max_rpm * 1000.0;
 #ifdef _CMDVEL_DEBUG
 ROS_DEBUG_STREAM("cmdvel power right: " << right_power << " left: " << left_power);
 #endif
@@ -284,8 +288,8 @@ ROS_DEBUG_STREAM("cmdvel power right: " << right_power << " left: " << left_powe
   else
   {
     // motor speed (rpm)
-    int32_t right_rpm = right_speed / wheel_circumference * 60.0;
-    int32_t left_rpm = left_speed / wheel_circumference * 60.0;
+    int32_t right_rpm = /*gear_ratio */ 20 * right_speed / wheel_circumference * 60.0;
+    int32_t left_rpm = /*gear_ratio */ 20 * left_speed / wheel_circumference * 60.0;
 #ifdef _CMDVEL_DEBUG
 ROS_DEBUG_STREAM("cmdvel rpm right: " << right_rpm << " left: " << left_rpm);
 #endif
@@ -295,6 +299,10 @@ ROS_DEBUG_STREAM("cmdvel rpm right: " << right_rpm << " left: " << left_rpm);
 
 
 #ifndef _CMDVEL_FORCE_RUN
+  ROS_INFO_STREAM("!!!!!!!!!!!!!!!!!!!!!!right cmd " << right_cmd.str());
+  ROS_INFO_STREAM("!!!!!!!!!!!!!!!!!!!!!!left cmd " << left_cmd.str());
+  
+
   controller.write(right_cmd.str());
   controller.write(left_cmd.str());
   controller.flush();
@@ -315,8 +323,8 @@ void MainNode::cmdvel_setup()
   controller.write("^ECHOF 1\r");
   controller.flush();
 
-  // enable watchdog timer (1000 ms)
-  controller.write("^RWD 1000\r");
+  // enable watchdog timer (300 ms)
+  controller.write("^RWD 300\r");
 
   // set motor operating mode (1 for closed-loop speed)
   if (open_loop)
@@ -340,6 +348,7 @@ void MainNode::cmdvel_setup()
   controller.write(right_ampcmd.str());
   controller.write(left_ampcmd.str());
 
+
   // set max speed (rpm) for relative speed commands
   std::stringstream right_rpmcmd;
   std::stringstream left_rpmcmd;
@@ -348,21 +357,23 @@ void MainNode::cmdvel_setup()
   controller.write(right_rpmcmd.str());
   controller.write(left_rpmcmd.str());
 
+  /* DON"T DISTURB MY PID VALUES
   // set max acceleration rate (2000 rpm/s * 10)
-  controller.write("^MAC 1 20000\r");
-  controller.write("^MAC 2 20000\r");
+  controller.write("^MAC 1 9000\r");
+  controller.write("^MAC 2 9000\r");
 
   // set max deceleration rate (2000 rpm/s * 10)
-  controller.write("^MDEC 1 20000\r");
-  controller.write("^MDEC 2 20000\r");
+  controller.write("^MDEC 1 9000\r");
+  controller.write("^MDEC 2 9000\r");
 
   // set PID parameters (gain * 10)
-  controller.write("^KP 1 10\r");
-  controller.write("^KP 2 10\r");
-  controller.write("^KI 1 80\r");
-  controller.write("^KI 2 80\r");
-  controller.write("^KD 1 0\r");
-  controller.write("^KD 2 0\r");
+  controller.write("^KP 1 0.055\r");
+  controller.write("^KP 2 0.2\r");
+  controller.write("^KI 1 5.75\r");
+  controller.write("^KI 2 8.5\r");
+  controller.write("^KD 1 0.00135\r");
+  controller.write("^KD 2 0.001\r");
+  */
 
   // set encoder mode (18 for feedback on motor1, 34 for feedback on motor2)
   controller.write("^EMOD 1 18\r");
@@ -397,10 +408,13 @@ void MainNode::cmdvel_run()
   }
   else
   {
+
     std::stringstream right_cmd;
     std::stringstream left_cmd;
     right_cmd << "!S 1 " << (int)(max_rpm * 0.1) << "\r";
     left_cmd << "!S 2 " << (int)(max_rpm * 0.1) << "\r";
+    ROS_INFO_STREAM("######################right cmd " << right_cmd.str());
+    ROS_INFO_STREAM("######################left cmd " << left_cmd.str());
     controller.write(right_cmd.str());
     controller.write(left_cmd.str());
   }
@@ -498,20 +512,20 @@ void MainNode::odom_setup()
   odom_msg.child_frame_id = base_frame;
 
   odom_msg.pose.covariance.assign(0);
-  odom_msg.pose.covariance[0] = 0.001;
+  /*odom_msg.pose.covariance[0] = 0.001;
   odom_msg.pose.covariance[7] = 0.001;
   odom_msg.pose.covariance[14] = 1000000;
   odom_msg.pose.covariance[21] = 1000000;
   odom_msg.pose.covariance[28] = 1000000;
-  odom_msg.pose.covariance[35] = 1000;
+  odom_msg.pose.covariance[35] = 1000;*/
 
   odom_msg.twist.covariance.assign(0);
-  odom_msg.twist.covariance[0] = 0.001;
+  /*odom_msg.twist.covariance[0] = 0.001;
   odom_msg.twist.covariance[7] = 0.001;
   odom_msg.twist.covariance[14] = 1000000;
   odom_msg.twist.covariance[21] = 1000000;
   odom_msg.twist.covariance[28] = 1000000;
-  odom_msg.twist.covariance[35] = 1000;
+  odom_msg.twist.covariance[35] = 1000;*/
 
 #ifdef _ODOM_SENSORS
 //  voltage_msg.header.seq = 0;
@@ -808,7 +822,7 @@ ROS_DEBUG("");
 int MainNode::run()
 {
 
-	ROS_INFO("Beginning setup...");
+	ROS_INFO("Beginning setup... (Tuned for sofa-2-002)");
 
 	serial::Timeout timeout = serial::Timeout::simpleTimeout(1000);
 	controller.setPort(port);
